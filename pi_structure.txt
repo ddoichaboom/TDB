@@ -1,0 +1,52 @@
+.
+├── assets
+│   └── qr_temp.png
+├── config.py
+├── core
+│   ├── authentication.py
+│   ├── dispenser.py
+│   └── state_controller.py
+├── dispenser-env
+│   ├── bin
+│   │   ├── Activate.ps1
+│   │   ├── activate
+│   │   ├── activate.csh
+│   │   ├── activate.fish
+│   │   ├── f2py
+│   │   ├── fonttools
+│   │   ├── normalizer
+│   │   ├── numpy-config
+│   │   ├── pip
+│   │   ├── pip3
+│   │   ├── pip3.11
+│   │   ├── pyftmerge
+│   │   ├── pyftsubset
+│   │   ├── pyserial-miniterm
+│   │   ├── pyserial-ports
+│   │   ├── python -> python3
+│   │   ├── python3 -> /usr/bin/python3
+│   │   ├── python3.11 -> python3
+│   │   ├── qr
+│   │   └── ttx
+│   ├── include
+│   │   └── python3.11
+│   ├── lib
+│   │   └── python3.11
+│   ├── lib64 -> lib
+│   ├── pyvenv.cfg
+│   └── share
+│       └── man
+├── dispenser_gui.py
+├── main.py
+├── pi_structure.txt
+├── requirements.txt
+├── test_manual_uid_qr.py
+└── utils
+    ├── json_formatter.py
+    ├── logger.py
+    ├── qr_display.py
+    ├── serial_reader.py
+    ├── server_request.py
+    └── time_helper.py
+
+13 directories, 37 files

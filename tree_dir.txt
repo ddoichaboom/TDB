@@ -1,0 +1,35 @@
+.
+├── __pycache__
+│   └── config.cpython-311.pyc
+├── assets
+│   └── qr_temp.png
+├── config.py
+├── core
+│   ├── __pycache__
+│   ├── authentication.py
+│   ├── dispenser.py
+│   └── state_controller.py
+├── dispenser-env
+│   ├── bin
+│   ├── include
+│   ├── lib
+│   ├── lib64 -> lib
+│   ├── pyvenv.cfg
+│   └── share
+├── dispenser_gui.py
+├── main.py
+├── pi_structure.txt
+├── requirements.txt
+├── test_manual_uid_qr.py
+├── tree_dir.txt
+└── utils
+    ├── __pycache__
+    ├── api.py
+    ├── json_formatter.py
+    ├── logger.py
+    ├── qr_display.py
+    ├── serial_reader.py
+    ├── server_request.py
+    └── time_helper.py
+
+13 directories, 20 files
