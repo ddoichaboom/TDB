@@ -55,7 +55,8 @@ class RaspberryPiLogger:
     def setup_log_paths(self):
         """로그 파일 경로 설정"""
         try:
-            # 로그 디렉토리 생성
+            # ✅ config.py의 SYSTEM_PATHS 사용
+            from config import SYSTEM_PATHS
             log_dir = Path(SYSTEM_PATHS['logs_dir'])
             log_dir.mkdir(parents=True, exist_ok=True)
             
@@ -81,13 +82,15 @@ class RaspberryPiLogger:
         except Exception as e:
             print(f"로그 경로 설정 실패: {e}")
             # 폴백: 현재 디렉토리 사용
+            log_dir = Path.cwd() / 'logs'
+            log_dir.mkdir(exist_ok=True)
             self.log_files = {
-                'main': Path('dispenser.log'),
-                'error': Path('error.log'),
-                'performance': Path('performance.log'),
-                'hardware': Path('hardware.log'),
-                'network': Path('network.log'),
-                'audit': Path('audit.log')
+                'main': log_dir / 'dispenser.log',
+                'error': log_dir / 'error.log',
+                'performance': log_dir / 'performance.log',
+                'hardware': log_dir / 'hardware.log',
+                'network': log_dir / 'network.log',
+                'audit': log_dir / 'audit.log'
             }
     
     def setup_logger(self):

@@ -4,6 +4,9 @@ import sys
 import time
 import signal
 import threading
+import argparse
+import subprocess
+
 from pathlib import Path
 
 # 프로젝트 모듈 임포트
@@ -13,13 +16,25 @@ from utils.server_request import verify_rfid_uid, get_dispense_list, report_disp
 from core.dispenser import trigger_slot_dispense, init_gpio, cleanup_gpio
 from core.state_controller import StateController
 
+try:
+    from dispenser_gui import show_main_screen
+    GUI_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARNING] GUI 모듈 로드 실패: {e}")
+    GUI_AVAILABLE = False
+
 class SimpleMedicineDispenser:
     """간소화된 약 디스펜서 메인 시스템"""
     
-    def __init__(self):
+    def __init__(self, enable_gui=False):
         self.running = True
         self.state_controller = StateController()
         self.device_id = self.load_device_id()
+        
+        # ✅ GUI 관련 설정 추가
+        self.enable_gui = enable_gui and GUI_AVAILABLE
+        self.gui_thread = None
+        self.gui_message_queue = None
         
         # ✅ 슬롯 매핑 캐시 추가
         self.slot_mapping_cache = {}
@@ -32,12 +47,99 @@ class SimpleMedicineDispenser:
             'successful_auth': 0,
             'failed_auth': 0,
             'medicines_dispensed': 0,
-            'intake_confirmations': 0  # ✅ 복용 완료 통계 추가
+            'intake_confirmations': 0,
+            'duplicate_attempts': 0  # ✅ 중복 시도 추가
         }
         
         print(f"[SYSTEM] 디스펜서 초기화 완료 - Device ID: {self.device_id}")
         print(f"[SYSTEM] 시뮬레이션 모드: {'ON' if SIMULATION_MODE else 'OFF'}")
+        print(f"[SYSTEM] GUI 모드: {'ON' if self.enable_gui else 'OFF'}")
     
+    def start_gui(self):
+            """GUI 시작 (별도 스레드에서)"""
+            if not self.enable_gui:
+                return
+            
+            try:
+                print("[GUI] GUI 시작 중...")
+
+                # ✅ 라즈베리파이 환경에서 DISPLAY 환경변수 자동 설정
+                self._setup_display_environment()
+                
+                # GUI 메시지 큐 초기화 (추후 GUI와 통신용)
+                import queue
+                self.gui_message_queue = queue.Queue()
+                
+                # GUI를 별도 스레드에서 실행
+                def run_gui():
+                    try:
+                        show_main_screen(self.device_id)
+                    except Exception as e:
+                        print(f"[ERROR] GUI 실행 오류: {e}")
+                        self.enable_gui = False
+                
+                self.gui_thread = threading.Thread(target=run_gui, daemon=True)
+                self.gui_thread.start()
+                
+                print("[GUI] ✅ GUI 스레드 시작 완료")
+                
+                # GUI 초기화 대기 (약간의 지연)
+                time.sleep(2)
+                
+            except Exception as e:
+                print(f"[ERROR] GUI 시작 실패: {e}")
+                self.enable_gui = False
+
+    def _setup_display_environment(self):
+        """디스플레이 환경 설정 (라즈베리파이용)"""
+        try:
+            current_display = os.environ.get('DISPLAY')
+            
+            if not current_display:
+                # DISPLAY 환경변수가 없으면 기본값 설정
+                os.environ['DISPLAY'] = ':0'
+                print(f"[GUI] DISPLAY 환경변수 설정: :0")
+            else:
+                print(f"[GUI] 기존 DISPLAY 환경변수 사용: {current_display}")
+            
+            # X11 권한 설정 시도
+            try:
+                subprocess.run(['xhost', '+local:'], 
+                             check=False, capture_output=True, timeout=5)
+                print("[GUI] X11 접근 권한 설정 완료")
+            except:
+                print("[GUI] X11 권한 설정 건너뛰기")
+            
+            # 화면 보호기 비활성화 시도
+            try:
+                subprocess.run(['xset', 's', 'off'], 
+                             check=False, capture_output=True, timeout=5)
+                subprocess.run(['xset', '-dpms'], 
+                             check=False, capture_output=True, timeout=5)
+                print("[GUI] 화면 보호기 비활성화 완료")
+            except:
+                print("[GUI] 화면 보호기 설정 건너뛰기")
+                
+        except Exception as e:
+            print(f"[WARNING] 디스플레이 환경 설정 오류: {e}")
+            # 기본값 강제 설정
+            os.environ['DISPLAY'] = ':0'
+
+    def send_gui_message(self, message_type, data=None):
+        """GUI에 메시지 전송"""
+        if not self.enable_gui or not self.gui_message_queue:
+            return
+        
+        try:
+            message = {
+                'type': message_type,
+                'data': data,
+                'timestamp': time.time()
+            }
+            self.gui_message_queue.put_nowait(message)
+        except Exception as e:
+            print(f"[ERROR] GUI 메시지 전송 오류: {e}")
+
     def load_device_id(self):
         """디바이스 ID 로드 또는 생성"""
         try:
@@ -119,7 +221,7 @@ class SimpleMedicineDispenser:
             return False
     
     def process_rfid_scan(self, uid):
-        """RFID 스캔 처리 - 핵심 비즈니스 로직 (개선)"""
+        """RFID 스캔 처리 - took_today 체크 로직 수정"""
         print(f"\n[RFID] 카드 스캔: {uid}")
         self.stats['total_scans'] += 1
         
@@ -139,10 +241,32 @@ class SimpleMedicineDispenser:
         # 인증 성공
         user = auth_result.get('user', {})
         user_name = user.get('name', '사용자')
-        print(f"[AUTH] ✅ 인증 성공: {user_name}")
+        user_id = user.get('user_id', 'unknown')
+        print(f"[AUTH] ✅ 인증 성공: {user_name} (ID: {user_id})")
         self.stats['successful_auth'] += 1
         
-        # 2단계: 배출할 약 목록 조회 (슬롯 정보 포함)
+        # ✅ 2단계: took_today 체크 (수정된 부분)
+        took_today = user.get('took_today', 0)
+        print(f"[CHECK] took_today 상태 확인: {took_today}")
+        
+        if took_today == 1:
+            print(f"[CHECK] ⚠️ {user_name}님은 이미 오늘 약을 받으셨습니다")
+            print("[CHECK] 🚫 중복 배출을 방지합니다")
+            
+            # 통계 업데이트 (중복 시도)
+            if 'duplicate_attempts' not in self.stats:
+                self.stats['duplicate_attempts'] = 0
+            self.stats['duplicate_attempts'] += 1
+            
+            # 사용자에게 알림 (GUI가 있다면 표시)
+            self._show_already_taken_message(user_name)
+            
+            # ✅ 중요: 여기서 바로 리턴하여 배출 로직을 실행하지 않음
+            return True  # 성공으로 처리하되 배출은 하지 않음
+        
+        print(f"[CHECK] ✅ {user_name}님 오늘 첫 약 수령 - 배출 진행")
+        
+        # 3단계: 배출할 약 목록 조회 (슬롯 정보 포함)
         print("[MEDICINE] 배출 대상 약 조회 중...")
         dispense_list = get_dispense_list(uid)
         
@@ -158,7 +282,7 @@ class SimpleMedicineDispenser:
             time_of_day = item.get('time_of_day', '')
             print(f"  - {med_name} ({dose}개) [슬롯 {slot}] [{time_of_day}]")
         
-        # 3단계: 약 배출 실행
+        # 4단계: 약 배출 실행
         print("[DISPENSE] 약 배출 시작...")
         success_list = self.execute_medicine_dispense(dispense_list)
         
@@ -166,7 +290,7 @@ class SimpleMedicineDispenser:
             print(f"[DISPENSE] ✅ 배출 완료: {len(success_list)}개")
             self.stats['medicines_dispensed'] += len(success_list)
             
-            # 4단계: 결과 서버 전송
+            # 5단계: 결과 서버 전송
             print("[SERVER] 배출 결과 전송 중...")
             result = report_dispense_result(uid, success_list)
             if result:
@@ -174,7 +298,7 @@ class SimpleMedicineDispenser:
             else:
                 print("[SERVER] ⚠️ 결과 전송 실패")
             
-            # ✅ 5단계: 복용 완료 처리 (took_today = 1로 설정)
+            # ✅ 6단계: 복용 완료 처리 (took_today = 1로 설정)
             print("[CONFIRM] 복용 완료 처리 중...")
             try:
                 confirm_result = confirm_user_intake(uid)
@@ -191,6 +315,29 @@ class SimpleMedicineDispenser:
             print("[DISPENSE] ❌ 약 배출 실패")
         
         return len(success_list) > 0
+
+    def _show_already_taken_message(self, user_name):
+        """이미 약을 받은 사용자에게 메시지 표시 (GUI 통합)"""
+        try:
+            # 콘솔 메시지
+            print("="*50)
+            print(f"🔔 {user_name}님께 알림")
+            print("오늘 이미 약을 받으셨습니다.")
+            print("내일 다시 이용해주세요.")
+            print("="*50)
+            
+            # ✅ GUI에도 메시지 전송
+            if self.enable_gui:
+                self.send_gui_message('show_already_taken', {
+                    'user_name': user_name,
+                    'message': '오늘 이미 약을 받으셨습니다.'
+                })
+            
+            # 간단한 대기 시간 (사용자가 메시지를 읽을 수 있도록)
+            time.sleep(3)
+            
+        except Exception as e:
+            print(f"[ERROR] 알림 메시지 표시 오류: {e}")
     
     def execute_medicine_dispense(self, dispense_list):
         """약 배출 실행 (개선된 슬롯 매핑 사용)"""
@@ -248,9 +395,11 @@ class SimpleMedicineDispenser:
         return success_list
     
     def main_loop(self):
-        """메인 실행 루프"""
+        """메인 실행 루프 (GUI 통합)"""
         print("\n" + "="*50)
         print("🏥 Smart Medicine Dispenser 시작")
+        if self.enable_gui:
+            print("🖥️  GUI 모드 활성화")
         print("="*50)
         
         if SIMULATION_MODE:
@@ -282,11 +431,23 @@ class SimpleMedicineDispenser:
                         print(f"[WARNING] {uid} 이미 처리 중...")
                         continue
                     
+                    # ✅ GUI에 RFID 감지 알림
+                    if self.enable_gui:
+                        self.send_gui_message('rfid_detected', {'uid': uid})
+                    
                     # RFID 처리
                     self.state_controller.set_processing(uid)
                     try:
                         success = self.process_rfid_scan(uid)
                         consecutive_errors = 0  # 성공시 에러 카운트 리셋
+                        
+                        # ✅ GUI에 처리 결과 알림
+                        if self.enable_gui:
+                            self.send_gui_message('rfid_processed', {
+                                'uid': uid,
+                                'success': success
+                            })
+                            
                     finally:
                         self.state_controller.clear()
                     
@@ -352,10 +513,14 @@ class SimpleMedicineDispenser:
         print("[SYSTEM] 종료 완료")
     
     def run(self):
-        """시스템 실행"""
+        """시스템 실행 (GUI 통합)"""
         try:
             # 신호 처리기 설정
             self.setup_signal_handlers()
+            
+            # GUI 시작 (활성화된 경우)
+            if self.enable_gui:
+                self.start_gui()
             
             # 하드웨어 초기화
             if not self.initialize_hardware():
@@ -374,15 +539,56 @@ class SimpleMedicineDispenser:
             self.shutdown()
 
 
+
 def main():
-    """메인 진입점"""
+    """메인 진입점 (명령행 인자 처리 추가)"""
     try:
+        # ✅ 명령행 인자 파싱
+        parser = argparse.ArgumentParser(description='Smart Medicine Dispenser')
+        parser.add_argument('--gui', action='store_true', 
+                          help='GUI 모드로 실행 (라즈베리파이 모니터 출력)')
+        parser.add_argument('--console', action='store_true',
+                          help='콘솔 모드로 실행 (기본값)')
+        parser.add_argument('--auto-gui', action='store_true',
+                          help='라즈베리파이에서 자동으로 GUI 모드 실행')
+        
+        args = parser.parse_args()
+        
+        # GUI 모드 결정
+        enable_gui = False
+        
+        if args.gui:
+            enable_gui = True
+            print("[SYSTEM] GUI 모드로 시작")
+        elif args.auto_gui and RASPBERRY_PI_CONFIG.get('auto_start_gui', False):
+            enable_gui = True
+            print("[SYSTEM] 자동 GUI 모드로 시작")
+        elif args.console:
+            enable_gui = False
+            print("[SYSTEM] 콘솔 모드로 시작")
+        else:
+            # 기본값: 라즈베리파이이고 모니터가 연결되어 있으면 GUI 모드
+            try:
+                import platform
+                is_raspberry_pi = 'arm' in platform.machine().lower()
+                has_display = os.environ.get('DISPLAY') is not None
+                
+                if is_raspberry_pi and has_display:
+                    enable_gui = True
+                    print("[SYSTEM] 라즈베리파이 환경 감지 - GUI 모드로 시작")
+                else:
+                    enable_gui = False
+                    print("[SYSTEM] 콘솔 모드로 시작")
+            except:
+                enable_gui = False
+                print("[SYSTEM] 기본 콘솔 모드로 시작")
+        
         # 작업 디렉토리 설정
         script_dir = Path(__file__).parent
         os.chdir(script_dir)
         
         # 시스템 생성 및 실행
-        dispenser = SimpleMedicineDispenser()
+        dispenser = SimpleMedicineDispenser(enable_gui=enable_gui)
         success = dispenser.run()
         
         sys.exit(0 if success else 1)

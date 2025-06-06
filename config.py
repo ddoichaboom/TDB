@@ -55,7 +55,7 @@ GUI_CONFIG = {
     'max_workers': 2,
     'cache_duration': 60,
     
-    # UI 색상 테마
+     # UI 색상 테마
     'colors': {
         'primary': '#2563eb',
         'success': '#16a34a', 
@@ -64,7 +64,17 @@ GUI_CONFIG = {
         'background': '#f8fafc',
         'card_bg': '#ffffff',
         'text_primary': '#1e293b',
-        'text_secondary': '#64748b'
+        'text_secondary': '#64748b',
+        'text_muted': '#9ca3af'  # ← 이 줄 추가
+    },
+    
+    # 폰트 설정 (GUI에서 사용)  ← 이 전체 섹션 추가
+    'fonts': {
+        'sizes': {
+            'header': 16,
+            'body': 12,
+            'small': 10
+        }
     }
 }
 
@@ -88,11 +98,16 @@ RASPBERRY_PI_CONFIG = {
     'fullscreen': False,  # 개발 단계에서는 창모드
     'hide_cursor': False,
     'auto_start_gui': False,
+    'disable_screensaver': True,
     
     # 오디오 설정
     'audio_enabled': False,  # 현재 단계에서는 비활성화
     'audio_device': 'HDMI',
-    'voice_feedback': False
+    'voice_feedback': False,
+    
+    # 추가 설정 (혹시 필요할 수 있는 것들)
+    'restart_on_memory_limit': False,
+    'restart_on_temperature_limit': False
 }
 
 # ============================================================================
@@ -171,15 +186,42 @@ DEBUG_CONFIG = {
 }
 
 # ============================================================================
-# 시스템 경로 (간소화)
+# 동적 시스템 경로 설정 (사용자 환경에 맞게 자동 조정)
 # ============================================================================
 
+def get_base_directory():
+    """현재 사용자 환경에 맞는 기본 디렉토리 반환"""
+    return os.getcwd()
+
+def get_user_home():
+    """현재 사용자의 홈 디렉토리 반환"""
+    return os.path.expanduser('~')
+
+def get_data_directory():
+    """데이터 저장 디렉토리 반환"""
+    base_dir = get_base_directory()
+    
+    # 현재 디렉토리에 쓰기 권한이 있으면 사용
+    if os.access(base_dir, os.W_OK):
+        return base_dir
+    
+    # 없으면 사용자 홈 디렉토리 사용
+    user_home = get_user_home()
+    data_dir = os.path.join(user_home, '.dispenser')
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+# 동적 경로 설정
+BASE_DIR = get_base_directory()
+DATA_DIR = get_data_directory()
+
 SYSTEM_PATHS = {
-    'base_dir': os.getcwd(),
-    'logs_dir': 'logs',
-    'config_dir': 'config',
-    'assets_dir': 'assets',
-    'temp_dir': 'temp'
+    'base_dir': BASE_DIR,
+    'data_dir': DATA_DIR,
+    'logs_dir': os.path.join(DATA_DIR, 'logs'),
+    'config_dir': os.path.join(DATA_DIR, 'config'),
+    'assets_dir': os.path.join(BASE_DIR, 'assets'),
+    'temp_dir': os.path.join(DATA_DIR, 'temp')
 }
 
 # ============================================================================

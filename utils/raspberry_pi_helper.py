@@ -28,8 +28,26 @@ class RaspberryPiHelper:
         self.system_info_cache = {}
         self.last_system_info_update = 0
         
-        print("[INFO] RaspberryPiHelper 초기화")
-    
+        # ✅ 동적 경로 설정 추가
+        self.user_home = Path.home()
+        self.project_root = Path.cwd()
+        self.config_dir = self.get_config_directory()
+
+    def get_config_directory(self):
+            """설정 디렉토리 동적 결정"""
+            # 1순위: 현재 프로젝트 디렉토리 하위
+            project_config = self.project_root / 'config'
+            if project_config.exists() or os.access(self.project_root, os.W_OK):
+                project_config.mkdir(exist_ok=True)
+                return project_config
+            
+            # 2순위: 사용자 홈 디렉토리 하위
+            user_config = self.user_home / '.dispenser' / 'config'
+            user_config.mkdir(parents=True, exist_ok=True)
+            return user_config
+            print("[INFO] RaspberryPiHelper 초기화")
+        
+
     def get_system_info(self):
         """라즈베리파이 시스템 정보 수집"""
         try:
@@ -607,9 +625,14 @@ class RaspberryPiHelper:
         except:
             return 0.0
     
-    def save_hardware_config(self, config_path='/home/pi/dispenser/config/hardware.json'):
-        """하드웨어 설정 저장"""
+    def save_hardware_config(self, config_path=None):
+        """하드웨어 설정 저장 (동적 경로)"""
         try:
+            if config_path is None:
+                # ❌ 기존: config_path='/home/pi/dispenser/config/hardware.json'
+                # ✅ 수정: 동적 경로 사용
+                config_path = self.config_dir / 'hardware.json'
+            
             config = {
                 'relay_pins': self.relay_pins,
                 'rfid_pins': self.rfid_pins,
@@ -617,7 +640,9 @@ class RaspberryPiHelper:
                 'timestamp': time.time()
             }
             
-            Path(config_path).parent.mkdir(parents=True, exist_ok=True)
+            # 디렉토리 생성
+            config_path = Path(config_path)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
             
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=2)
@@ -629,11 +654,17 @@ class RaspberryPiHelper:
             print(f"[ERROR] 하드웨어 설정 저장 실패: {e}")
             return False
     
-    def load_hardware_config(self, config_path='/home/pi/dispenser/config/hardware.json'):
-        """하드웨어 설정 로드"""
+    def load_hardware_config(self, config_path=None):
+        """하드웨어 설정 로드 (동적 경로)"""
         try:
-            if not Path(config_path).exists():
-                print("[INFO] 하드웨어 설정 파일이 없음")
+            if config_path is None:
+                # ❌ 기존: config_path='/home/pi/dispenser/config/hardware.json'
+                # ✅ 수정: 동적 경로 사용
+                config_path = self.config_dir / 'hardware.json'
+            
+            config_path = Path(config_path)
+            if not config_path.exists():
+                print(f"[INFO] 하드웨어 설정 파일이 없음: {config_path}")
                 return False
             
             with open(config_path, 'r') as f:

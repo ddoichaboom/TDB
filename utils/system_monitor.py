@@ -7,7 +7,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
-from config import MONITORING_CONFIG, RASPBERRY_PI_CONFIG
+from config import MONITORING_CONFIG, RASPBERRY_PI_CONFIG, SYSTEM_PATHS
 
 class SystemMonitor:
     """라즈베리파이 시스템 모니터링 클래스"""
@@ -57,12 +57,40 @@ class SystemMonitor:
             'alert_history': [],
             'last_alert_time': {}
         }
+       
         
-        # 데이터 로깅
-        self.log_file = Path('/home/pi/dispenser/logs/system_metrics.log')
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-        
+        # ✅ 동적 로그 파일 경로 설정
+        self.log_file = self.get_log_file_path()
+
         print("[INFO] 시스템 모니터 초기화 완료")
+
+    def get_log_file_path(self):
+        """로그 파일 경로 동적 결정"""
+        try:
+            # 1순위: config.py의 SYSTEM_PATHS 사용
+            if 'logs_dir' in SYSTEM_PATHS:
+                logs_dir = Path(SYSTEM_PATHS['logs_dir'])
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                return logs_dir / 'system_metrics.log'
+            
+            # 2순위: 현재 프로젝트 디렉토리
+            project_logs = Path.cwd() / 'logs'
+            if os.access(Path.cwd(), os.W_OK):
+                project_logs.mkdir(exist_ok=True)
+                return project_logs / 'system_metrics.log'
+            
+            # 3순위: 사용자 홈 디렉토리
+            user_logs = Path.home() / '.dispenser' / 'logs'
+            user_logs.mkdir(parents=True, exist_ok=True)
+            return user_logs / 'system_metrics.log'
+            
+        except Exception as e:
+            print(f"[ERROR] 로그 파일 경로 설정 오류: {e}")
+            # 최후 수단: 임시 디렉토리
+            import tempfile
+            temp_dir = Path(tempfile.gettempdir()) / 'dispenser_logs'
+            temp_dir.mkdir(exist_ok=True)
+            return temp_dir / 'system_metrics.log'
     
     def start_monitoring(self):
         """모니터링 시작"""

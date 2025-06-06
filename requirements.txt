@@ -1,5 +1,15 @@
+# 기존 패키지
 requests
 qrcode
 pillow
 pyserial
 tk
+
+# GUI 관련 필수 패키지
+psutil
+
+# 라즈베리파이 하드웨어 제어 (선택사항 - 실제 하드웨어에서만 필요)
+# RPi.GPIO
+
+# 추가 유틸리티 패키지 (선택사항)
+# python-dotenv
