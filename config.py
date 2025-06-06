@@ -1,65 +1,61 @@
-# config.py (라즈베리파이 환경 최적화)
+# config.py (핵심 설정만 포함 - 단계별 확장 가능)
 import os
 
-# 아두이노와 연결된 시리얼 포트
-SERIAL_PORT = '/dev/ttyACM0'
-BAUD_RATE = 9600
+# ============================================================================
+# 기본 시스템 설정
+# ============================================================================
 
-# 서버 주소 (AWS EC2 연동 대비)
-BASE_API_URL = os.getenv('DISPENSER_API_URL', 'http://localhost:3000/dispenser')
-AWS_EC2_URL = os.getenv('AWS_EC2_URL', 'https://your-ec2-instance.amazonaws.com/dispenser')
-
-# 하드웨어 시뮬레이션 모드 (Arduino 없이 테스트할 때 True)
+# 시뮬레이션 모드 (하드웨어 없이 테스트 가능)
 SIMULATION_MODE = os.getenv('SIMULATION_MODE', 'True').lower() == 'true'
 
-# 라즈베리파이 환경 설정
-RASPBERRY_PI_CONFIG = {
-    # 디스플레이 설정
-    'fullscreen': True,
-    'hide_cursor': True,  # 마우스 커서 숨김
-    'disable_screensaver': True,
-    'auto_start_gui': True,
+# 시리얼 포트 설정 (RFID 리더 연결)
+SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyACM0')
+BAUD_RATE = int(os.getenv('BAUD_RATE', '9600'))
+
+# 서버 URL 설정  
+BASE_API_URL = os.getenv('DISPENSER_API_URL', 'http://192.168.59.208:3000/dispenser')
+
+# ============================================================================
+# 하드웨어 설정 (약 배출 시스템)
+# ============================================================================
+
+HARDWARE_CONFIG = {
+    # 릴레이 핀 매핑 (슬롯번호: {전진핀, 후진핀})
+    'relay_pins': {
+        1: {'forward': 17, 'backward': 18},  # 슬롯 1
+        2: {'forward': 22, 'backward': 23},  # 슬롯 2  
+        3: {'forward': 24, 'backward': 25}   # 슬롯 3
+    },
     
-    # 터치스크린 없는 모니터 설정
-    'touch_enabled': False,
-    'keyboard_input': False,
-    'mouse_input': False,
+    # 배출 타이밍 설정 (초)
+    'servo_pulse_duration': 1.0,  # 릴레이 ON 시간
+    'slot_delay': 0.5,            # 전진->후진 사이 대기시간
     
-    # 스피커 설정 (모니터 내장 스피커)
-    'audio_device': 'HDMI',  # HDMI 오디오 출력
-    'audio_enabled': True,
-    'voice_feedback': True,
-    'sound_effects': True,
-    
-    # 자동 복구 설정
-    'auto_restart_on_crash': True,
-    'watchdog_enabled': True,
-    'max_restart_attempts': 3
+    # GPIO 기본 설정
+    'gpio_mode': 'BCM',           # GPIO 번호 모드
+    'gpio_warnings': False,       # GPIO 경고 메시지 끄기
+    'gpio_cleanup_on_exit': True  # 종료시 GPIO 정리
 }
 
-# GUI 설정 (라즈베리파이 최적화)
+# ============================================================================
+# GUI 및 네트워크 설정 (기본값)
+# ============================================================================
+
 GUI_CONFIG = {
-    # 업데이트 주기 (라즈베리파이 성능 고려)
-    'update_interval': 15,  # 15초로 늘림
-    'time_update_interval': 5,  # 시간 업데이트도 5초로
+    # 데이터 업데이트 주기 (초)
+    'update_interval': 15,
+    'time_update_interval': 5,
     
-    # 네트워크 설정 (AWS EC2 연동 고려)
-    'request_timeout': 15,  # 타임아웃 늘림
-    'max_retry_count': 5,
-    'retry_delay': 10,
-    'connection_check_interval': 30,
+    # 네트워크 요청 설정
+    'request_timeout': 10,
+    'max_retry_count': 3,
+    'retry_delay': 5,
     
-    # 성능 설정 (라즈베리파이)
-    'max_workers': 2,  # 스레드 수 줄임
-    'cache_duration': 60,  # 캐시 시간 늘림
-    'memory_limit_mb': 256,
+    # 성능 설정
+    'max_workers': 2,
+    'cache_duration': 60,
     
-    # UI 설정 (터치/키보드 없는 환경)
-    'animation_speed': 1000,  # 애니메이션 느리게
-    'loading_timeout': 30,
-    'auto_transition_time': 10000,  # 10초 후 자동 전환
-    
-    # 색상 테마 (모니터 가독성 최적화)
+    # UI 색상 테마
     'colors': {
         'primary': '#2563eb',
         'success': '#16a34a', 
@@ -68,165 +64,161 @@ GUI_CONFIG = {
         'background': '#f8fafc',
         'card_bg': '#ffffff',
         'text_primary': '#1e293b',
-        'text_secondary': '#64748b',
-        'text_muted': '#94a3b8'
-    },
-    
-    # 폰트 설정 (라즈베리파이 디스플레이)
-    'fonts': {
-        'family': 'DejaVu Sans',  # 라즈베리파이 기본 폰트
-        'sizes': {
-            'title': 32,
-            'header': 20,
-            'body': 16,
-            'small': 14,
-            'tiny': 12
-        }
+        'text_secondary': '#64748b'
     }
 }
 
-# 음성 피드백 설정
+# ============================================================================
+# 음성 피드백 설정 (기본값)
+# ============================================================================
+
 VOICE_CONFIG = {
-    'enabled': True,
+    'enabled': False,  # 현재 단계에서는 비활성화
     'language': 'ko',
     'volume': 0.8,
-    'speech_rate': 180,
-    'voice_engine': 'espeak',  # 라즈베리파이용
-    
-    # 음성 메시지 설정
-    'welcome_message': True,
-    'rfid_feedback': True,
-    'dispense_announcement': True,
-    'error_notification': True,
-    
-    # 사운드 효과
-    'sound_effects': {
-        'beep': True,
-        'success_chime': True,
-        'error_buzzer': True,
-        'notification_ping': True
-    }
+    'speech_rate': 180
 }
 
-# 로깅 설정 (라즈베리파이 SD카드 고려)
+# ============================================================================
+# 라즈베리파이 설정 (기본값)
+# ============================================================================
+
+RASPBERRY_PI_CONFIG = {
+    # 디스플레이 설정
+    'fullscreen': False,  # 개발 단계에서는 창모드
+    'hide_cursor': False,
+    'auto_start_gui': False,
+    
+    # 오디오 설정
+    'audio_enabled': False,  # 현재 단계에서는 비활성화
+    'audio_device': 'HDMI',
+    'voice_feedback': False
+}
+
+# ============================================================================
+# 로깅 설정 (간소화)
+# ============================================================================
+
 LOGGING_CONFIG = {
     'level': 'INFO',
     'format': '[%(levelname)s] %(asctime)s - %(message)s',
     'file_enabled': True,
-    'file_path': '/home/pi/dispenser/logs/dispenser.log',
-    'max_file_size': 5 * 1024 * 1024,  # 5MB로 줄임
-    'backup_count': 3,
-    'rotate_on_startup': True
+    'file_path': 'logs/dispenser.log',
+    'max_file_size': 5 * 1024 * 1024,  # 5MB
+    'backup_count': 3
 }
 
-# 시스템 모니터링 설정
+# ============================================================================
+# 시스템 모니터링 설정 (기본값)
+# ============================================================================
+
 MONITORING_CONFIG = {
-    'enabled': True,
-    'metrics_interval': 120,  # 2분으로 늘림
+    'enabled': False,  # 현재 단계에서는 비활성화
+    'metrics_interval': 120,
     'health_check_interval': 60,
-    'memory_threshold': 85,  # 메모리 임계값
+    'memory_threshold': 85,
     'cpu_threshold': 90,
-    'temperature_threshold': 70,  # 라즈베리파이 온도 모니터링
-    'disk_threshold': 90,
-    
-    # 자동 복구 설정
-    'auto_recovery': True,
-    'restart_on_memory_limit': True,
-    'restart_on_temperature_limit': True
+    'temperature_threshold': 70,
+    'auto_recovery': False
 }
 
-# 하드웨어 설정 (라즈베리파이 GPIO)
-HARDWARE_CONFIG = {
-    'gpio_cleanup_on_exit': True,
-    'servo_pulse_duration': 1.0,
-    'slot_delay': 0.5,
-    'max_dispense_retries': 3,
-    'dispense_timeout': 15,
-    
-    # 라즈베리파이 특화 설정
-    'gpio_mode': 'BCM',
-    'gpio_warnings': False,
-    'servo_frequency': 50,  # 50Hz PWM
-    
-    # 릴레이 핀 매핑
-    'relay_pins': {
-        1: {'forward': 17, 'backward': 18},
-        2: {'forward': 22, 'backward': 23}, 
-        3: {'forward': 24, 'backward': 25}
-    },
-    
-    # 센서 핀
-    'rfid_pins': {
-        'power': 2,
-        'ground': 6,
-        'data': 14,
-        'clock': 15
-    }
+# ============================================================================
+# 네트워크 설정 (간소화)
+# ============================================================================
+
+NETWORK_CONFIG = {
+    'primary_server': BASE_API_URL,
+    'fallback_mode': True,
+    'ssl_verify': True,
+    'auto_reconnect': True,
+    'reconnect_interval': 30,
+    'max_reconnect_attempts': 5
 }
 
-# 개발/디버그 설정
+# ============================================================================
+# 보안 설정 (기본값)
+# ============================================================================
+
+SECURITY_CONFIG = {
+    'device_id_file': 'muid.txt',
+    'encryption_enabled': False,  # 현재 단계에서는 단순화
+    'session_timeout': 300,
+    'max_failed_attempts': 3
+}
+
+# ============================================================================
+# 자동 시작 설정 (개발용)
+# ============================================================================
+
+AUTOSTART_CONFIG = {
+    'enabled': False,  # 개발 단계에서는 수동 시작
+    'startup_delay': 5,
+    'wait_for_network': True,
+    'max_network_wait': 30,
+    'run_system_check': False,
+    'display_splash_screen': False
+}
+
+# ============================================================================
+# 디버그 설정
+# ============================================================================
+
 DEBUG_CONFIG = {
     'enabled': SIMULATION_MODE,
     'verbose_api_logs': True,
-    'show_performance_metrics': True,
-    'mock_data_enabled': SIMULATION_MODE,
-    'gui_debug_mode': False,
-    'save_debug_screenshots': True,
-    'debug_log_path': '/home/pi/dispenser/logs/debug.log'
+    'show_performance_metrics': False,
+    'save_debug_screenshots': False
 }
 
-# 네트워크 설정 (AWS EC2 연동)
-NETWORK_CONFIG = {
-    'primary_server': BASE_API_URL,
-    'backup_server': AWS_EC2_URL,
-    'fallback_mode': True,  # 서버 연결 실패 시 오프라인 모드
-    
-    # 연결 테스트
-    'ping_test_hosts': [
-        '8.8.8.8',  # Google DNS
-        'amazonaws.com'  # AWS 연결 테스트
-    ],
-    
-    # SSL/TLS 설정
-    'ssl_verify': True,
-    'ssl_cert_path': '/home/pi/dispenser/certs/',
-    
-    # 재연결 설정
-    'auto_reconnect': True,
-    'reconnect_interval': 30,
-    'max_reconnect_attempts': 10
-}
+# ============================================================================
+# 시스템 경로 (간소화)
+# ============================================================================
 
-# 보안 설정
-SECURITY_CONFIG = {
-    'device_id_file': '/home/pi/dispenser/device_id.txt',
-    'encryption_enabled': True,
-    'api_key_file': '/home/pi/dispenser/api_key.txt',
-    
-    # RFID 보안
-    'rfid_encryption': True,
-    'session_timeout': 300,  # 5분
-    'max_failed_attempts': 3,
-    'lockout_duration': 600  # 10분
-}
-
-# 시스템 경로
 SYSTEM_PATHS = {
-    'base_dir': '/home/pi/dispenser',
-    'logs_dir': '/home/pi/dispenser/logs',
-    'config_dir': '/home/pi/dispenser/config',
-    'assets_dir': '/home/pi/dispenser/assets',
-    'sounds_dir': '/home/pi/dispenser/assets/sounds',
-    'temp_dir': '/tmp/dispenser',
-    'backup_dir': '/home/pi/dispenser/backup'
+    'base_dir': os.getcwd(),
+    'logs_dir': 'logs',
+    'config_dir': 'config',
+    'assets_dir': 'assets',
+    'temp_dir': 'temp'
 }
 
-# 자동 시작 설정
-AUTOSTART_CONFIG = {
-    'enabled': True,
-    'startup_delay': 30,  # 30초 후 시작
-    'wait_for_network': True,
-    'max_network_wait': 120,  # 최대 2분 대기
-    'run_system_check': True,
-    'display_splash_screen': True
-}
+# ============================================================================
+# 설정 검증 및 디렉토리 생성
+# ============================================================================
+
+def validate_config():
+    """설정값 검증 및 필수 디렉토리 생성"""
+    import pathlib
+    
+    # 필수 디렉토리 생성
+    for path_name, path_value in SYSTEM_PATHS.items():
+        pathlib.Path(path_value).mkdir(parents=True, exist_ok=True)
+    
+    # 하드웨어 설정 검증
+    if not SIMULATION_MODE:
+        required_pins = []
+        for slot, pins in HARDWARE_CONFIG['relay_pins'].items():
+            required_pins.extend([pins['forward'], pins['backward']])
+        
+        # 핀 번호 중복 체크
+        if len(required_pins) != len(set(required_pins)):
+            print("[WARNING] 릴레이 핀 번호가 중복됩니다!")
+        
+        print(f"[CONFIG] 하드웨어 핀 설정: {required_pins}")
+    
+    print(f"[CONFIG] 설정 로드 완료 - 시뮬레이션 모드: {SIMULATION_MODE}")
+
+# 설정 검증 실행
+if __name__ == "__main__":
+    validate_config()
+    print("\n=== 현재 설정 요약 ===")
+    print(f"시뮬레이션 모드: {SIMULATION_MODE}")
+    print(f"시리얼 포트: {SERIAL_PORT}")
+    print(f"서버 URL: {BASE_API_URL}")
+    print(f"릴레이 슬롯 수: {len(HARDWARE_CONFIG['relay_pins'])}")
+    print(f"GUI 활성화: {not RASPBERRY_PI_CONFIG['auto_start_gui']}")
+    print(f"음성 피드백: {VOICE_CONFIG['enabled']}")
+    print(f"시스템 모니터링: {MONITORING_CONFIG['enabled']}")
+else:
+    # 모듈 import시 자동 검증
+    validate_config()
