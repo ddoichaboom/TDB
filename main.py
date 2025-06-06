@@ -21,17 +21,56 @@ class SimpleMedicineDispenser:
         self.state_controller = StateController()
         self.device_id = self.load_device_id()
         
+        # ✅ 슬롯 매핑 캐시 추가
+        self.slot_mapping_cache = {}
+        self.slot_mapping_last_update = 0
+        self.slot_mapping_cache_duration = 300  # 5분 캐시
+        
         # 통계 정보 (간단하게)
         self.stats = {
             'total_scans': 0,
             'successful_auth': 0,
             'failed_auth': 0,
-            'medicines_dispensed': 0
+            'medicines_dispensed': 0,
+            'intake_confirmations': 0  # ✅ 복용 완료 통계 추가
         }
         
         print(f"[SYSTEM] 디스펜서 초기화 완료 - Device ID: {self.device_id}")
         print(f"[SYSTEM] 시뮬레이션 모드: {'ON' if SIMULATION_MODE else 'OFF'}")
     
+    def get_slot_mapping(self):
+            """슬롯 매핑 정보 조회 (캐시 적용)"""
+            current_time = time.time()
+            
+            # 캐시가 유효한 경우 재사용
+            if (self.slot_mapping_cache and 
+                current_time - self.slot_mapping_last_update < self.slot_mapping_cache_duration):
+                return self.slot_mapping_cache
+            
+            print("[MAPPING] 슬롯 매핑 정보 업데이트 중...")
+            
+            try:
+                from utils.server_request import get_user_slot_mapping
+                slot_mapping = get_user_slot_mapping(self.device_id)
+                
+                if slot_mapping:
+                    self.slot_mapping_cache = slot_mapping
+                    self.slot_mapping_last_update = current_time
+                    print(f"[MAPPING] ✅ 슬롯 매핑 업데이트 완료: {slot_mapping}")
+                    return slot_mapping
+                else:
+                    print("[MAPPING] ⚠️ 슬롯 매핑 정보를 가져올 수 없습니다. 기본값 사용")
+                    # 기본값 반환 (호환성 유지)
+                    return {
+                        'M001': 1,
+                        'M002': 2, 
+                        'M003': 3
+                    }
+                    
+            except Exception as e:
+                print(f"[ERROR] 슬롯 매핑 조회 오류: {e}")
+                return {}
+
     def load_device_id(self):
         """디바이스 ID 로드 또는 생성"""
         try:
@@ -81,7 +120,7 @@ class SimpleMedicineDispenser:
             return False
     
     def process_rfid_scan(self, uid):
-        """RFID 스캔 처리 - 핵심 비즈니스 로직"""
+        """RFID 스캔 처리 - 핵심 비즈니스 로직 (개선)"""
         print(f"\n[RFID] 카드 스캔: {uid}")
         self.stats['total_scans'] += 1
         
@@ -104,7 +143,7 @@ class SimpleMedicineDispenser:
         print(f"[AUTH] ✅ 인증 성공: {user_name}")
         self.stats['successful_auth'] += 1
         
-        # 2단계: 배출할 약 목록 조회
+        # 2단계: 배출할 약 목록 조회 (슬롯 정보 포함)
         print("[MEDICINE] 배출 대상 약 조회 중...")
         dispense_list = get_dispense_list(uid)
         
@@ -116,8 +155,9 @@ class SimpleMedicineDispenser:
         for item in dispense_list:
             med_name = item.get('medicine_name', 'Unknown')
             dose = item.get('dose', 1)
+            slot = item.get('slot', 'Unknown')
             time_of_day = item.get('time_of_day', '')
-            print(f"  - {med_name} ({dose}개) [{time_of_day}]")
+            print(f"  - {med_name} ({dose}개) [슬롯 {slot}] [{time_of_day}]")
         
         # 3단계: 약 배출 실행
         print("[DISPENSE] 약 배출 시작...")
@@ -134,36 +174,59 @@ class SimpleMedicineDispenser:
                 print("[SERVER] ✅ 결과 전송 완료")
             else:
                 print("[SERVER] ⚠️ 결과 전송 실패")
+            
+            # ✅ 5단계: 복용 완료 처리 (took_today = 1로 설정)
+            print("[CONFIRM] 복용 완료 처리 중...")
+            try:
+                from utils.server_request import confirm_user_intake
+                confirm_result = confirm_user_intake(uid)
+                
+                if confirm_result and confirm_result.get('status') in ['confirmed', 'already_confirmed']:
+                    print(f"[CONFIRM] ✅ 복용 완료: {confirm_result.get('message', '')}")
+                    self.stats['intake_confirmations'] += 1
+                else:
+                    print("[CONFIRM] ⚠️ 복용 완료 처리 실패")
+                    
+            except Exception as e:
+                print(f"[ERROR] 복용 완료 처리 오류: {e}")
         else:
             print("[DISPENSE] ❌ 약 배출 실패")
         
         return len(success_list) > 0
     
     def execute_medicine_dispense(self, dispense_list):
-        """약 배출 실행"""
+        """약 배출 실행 (개선된 슬롯 매핑 사용)"""
         success_list = []
         
-        # 슬롯 매핑 (서버에서 슬롯 정보가 없으므로 기본 매핑 사용)
-        # 실제 환경에서는 약품별 슬롯 정보를 별도로 관리해야 함
-        default_slot_mapping = {
-            'M001': 1,  # 첫 번째 약은 슬롯 1
-            'M002': 2,  # 두 번째 약은 슬롯 2  
-            'M003': 3,  # 세 번째 약은 슬롯 3
-        }
+        # ✅ 서버에서 실제 슬롯 매핑 정보 가져오기
+        slot_mapping = self.get_slot_mapping()
+        
+        if not slot_mapping:
+            print("[ERROR] 슬롯 매핑 정보를 가져올 수 없습니다")
+            return success_list
         
         for item in dispense_list:
             medi_id = item.get('medi_id')
             dose = item.get('dose', 1)
             medicine_name = item.get('medicine_name', medi_id)
             
-            # 슬롯 번호 결정 (서버 응답에 없으므로 매핑 사용)
-            slot_num = default_slot_mapping.get(medi_id, 1)  # 기본값 1
+            # ✅ 서버 응답에 slot 정보가 있으면 우선 사용
+            if 'slot' in item and item['slot']:
+                slot_num = item['slot']
+                print(f"[DISPENSE] 서버 슬롯 정보 사용: {medicine_name} -> 슬롯 {slot_num}")
+            else:
+                # 슬롯 매핑에서 조회
+                slot_num = slot_mapping.get(medi_id)
+                if not slot_num:
+                    print(f"[ERROR] {medi_id}에 대한 슬롯 정보 없음")
+                    continue
+                print(f"[DISPENSE] 매핑 테이블 사용: {medicine_name} -> 슬롯 {slot_num}")
             
             print(f"[DISPENSE] {medicine_name} 배출 중... (슬롯 {slot_num}, {dose}개)")
             
             try:
                 if SIMULATION_MODE:
-                    # 시뮬레이션: 단순히 성공으로 처리
+                    # 시뮬레이션: 성공으로 처리
                     print(f"[SIMULATION] {medicine_name} 배출 시뮬레이션 완료")
                     time.sleep(1)  # 배출 시간 시뮬레이션
                     success = True
@@ -249,7 +312,7 @@ class SimpleMedicineDispenser:
                 time.sleep(2)  # 오류 발생시 2초 대기
     
     def print_stats(self):
-        """통계 정보 출력"""
+        """통계 정보 출력 (개선)"""
         print("\n" + "="*30)
         print("📊 시스템 통계")
         print("="*30)
@@ -257,10 +320,15 @@ class SimpleMedicineDispenser:
         print(f"인증 성공: {self.stats['successful_auth']}")
         print(f"인증 실패: {self.stats['failed_auth']}")
         print(f"약 배출 수: {self.stats['medicines_dispensed']}")
+        print(f"복용 완료 처리: {self.stats['intake_confirmations']}")  # ✅ 추가
         
         if self.stats['total_scans'] > 0:
             success_rate = (self.stats['successful_auth'] / self.stats['total_scans']) * 100
             print(f"인증 성공률: {success_rate:.1f}%")
+        
+        # ✅ 슬롯 매핑 캐시 정보
+        if self.slot_mapping_cache:
+            print(f"현재 슬롯 매핑: {self.slot_mapping_cache}")
         
         print("="*30)
     

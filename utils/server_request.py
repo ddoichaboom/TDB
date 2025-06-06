@@ -313,6 +313,66 @@ def get_today_schedules(device_id):
     client = get_client()
     return client.get(f"schedules/{device_id}")
 
+def confirm_user_intake(uid):
+    """사용자 복용 완료 처리 (took_today = 1로 설정)
+    
+    Args:
+        uid (str): 사용자 UID (k_uid)
+        
+    Returns:
+        dict: 확인 결과 {'status': 'confirmed'/'already_confirmed', 'message': '...'}
+    """
+    print(f"[API] 복용 완료 처리: {uid}")
+    
+    client = get_client()
+    data = {"uid": uid}
+    
+    # 서버에 정의된 정확한 엔드포인트
+    endpoints_to_try = [
+        "confirm",           # 서버에 정의된 엔드포인트
+        "confirm-intake",    # 백업 시도
+        "intake/confirm",    # 추가 시도
+    ]
+    
+    for endpoint in endpoints_to_try:
+        print(f"[API] 엔드포인트 시도: {endpoint}")
+        result = client.post(endpoint, data)
+        
+        if result is not None:
+            print(f"[API] ✅ 복용 완료 처리 성공: {endpoint}")
+            return result
+    
+    print(f"[API] ❌ 모든 복용 완료 엔드포인트 실패")
+    return None
+
+def get_user_slot_mapping(device_id):
+    """기기별 약물-슬롯 매핑 정보 조회
+    
+    Args:
+        device_id (str): 기기 UID (m_uid)
+        
+    Returns:
+        dict: 슬롯 매핑 정보 {medi_id: slot_number, ...}
+    """
+    print(f"[API] 슬롯 매핑 조회: {device_id}")
+    
+    client = get_client()
+    
+    # 기기 상태 조회로 슬롯 정보 가져오기
+    machine_status = client.get(f"machine-status/{device_id}")
+    
+    if machine_status and 'slots' in machine_status:
+        slot_mapping = {}
+        for slot_info in machine_status['slots']:
+            if slot_info.get('medi_id') and slot_info.get('slot'):
+                slot_mapping[slot_info['medi_id']] = slot_info['slot']
+        
+        print(f"[API] ✅ 슬롯 매핑 조회 성공: {slot_mapping}")
+        return slot_mapping
+    else:
+        print(f"[API] ❌ 슬롯 매핑 조회 실패")
+        return {}
+
 # ============================================================================
 # 직접 실행시 테스트
 # ============================================================================
