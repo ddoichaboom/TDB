@@ -1,4 +1,4 @@
-# main.py (핵심 기능 중심의 간소화 버전)
+# main.py (핵심 기능 중심의 간소화 버전 - 들여쓰기 수정)
 import os
 import sys
 import time
@@ -9,7 +9,7 @@ from pathlib import Path
 # 프로젝트 모듈 임포트
 from config import SIMULATION_MODE
 from utils.serial_reader import read_uid
-from utils.server_request import verify_rfid_uid, get_dispense_list, report_dispense_result
+from utils.server_request import verify_rfid_uid, get_dispense_list, report_dispense_result, confirm_user_intake, get_user_slot_mapping
 from core.dispenser import trigger_slot_dispense, init_gpio, cleanup_gpio
 from core.state_controller import StateController
 
@@ -38,39 +38,6 @@ class SimpleMedicineDispenser:
         print(f"[SYSTEM] 디스펜서 초기화 완료 - Device ID: {self.device_id}")
         print(f"[SYSTEM] 시뮬레이션 모드: {'ON' if SIMULATION_MODE else 'OFF'}")
     
-    def get_slot_mapping(self):
-            """슬롯 매핑 정보 조회 (캐시 적용)"""
-            current_time = time.time()
-            
-            # 캐시가 유효한 경우 재사용
-            if (self.slot_mapping_cache and 
-                current_time - self.slot_mapping_last_update < self.slot_mapping_cache_duration):
-                return self.slot_mapping_cache
-            
-            print("[MAPPING] 슬롯 매핑 정보 업데이트 중...")
-            
-            try:
-                from utils.server_request import get_user_slot_mapping
-                slot_mapping = get_user_slot_mapping(self.device_id)
-                
-                if slot_mapping:
-                    self.slot_mapping_cache = slot_mapping
-                    self.slot_mapping_last_update = current_time
-                    print(f"[MAPPING] ✅ 슬롯 매핑 업데이트 완료: {slot_mapping}")
-                    return slot_mapping
-                else:
-                    print("[MAPPING] ⚠️ 슬롯 매핑 정보를 가져올 수 없습니다. 기본값 사용")
-                    # 기본값 반환 (호환성 유지)
-                    return {
-                        'M001': 1,
-                        'M002': 2, 
-                        'M003': 3
-                    }
-                    
-            except Exception as e:
-                print(f"[ERROR] 슬롯 매핑 조회 오류: {e}")
-                return {}
-
     def load_device_id(self):
         """디바이스 ID 로드 또는 생성"""
         try:
@@ -90,6 +57,38 @@ class SimpleMedicineDispenser:
         except Exception as e:
             print(f"[ERROR] Device ID 처리 오류: {e}")
             return "UNKNOWN"
+    
+    def get_slot_mapping(self):
+        """슬롯 매핑 정보 조회 (캐시 적용)"""
+        current_time = time.time()
+        
+        # 캐시가 유효한 경우 재사용
+        if (self.slot_mapping_cache and 
+            current_time - self.slot_mapping_last_update < self.slot_mapping_cache_duration):
+            return self.slot_mapping_cache
+        
+        print("[MAPPING] 슬롯 매핑 정보 업데이트 중...")
+        
+        try:
+            slot_mapping = get_user_slot_mapping(self.device_id)
+            
+            if slot_mapping:
+                self.slot_mapping_cache = slot_mapping
+                self.slot_mapping_last_update = current_time
+                print(f"[MAPPING] ✅ 슬롯 매핑 업데이트 완료: {slot_mapping}")
+                return slot_mapping
+            else:
+                print("[MAPPING] ⚠️ 슬롯 매핑 정보를 가져올 수 없습니다. 기본값 사용")
+                # 기본값 반환 (호환성 유지)
+                return {
+                    'M001': 1,
+                    'M002': 2, 
+                    'M003': 3
+                }
+                
+        except Exception as e:
+            print(f"[ERROR] 슬롯 매핑 조회 오류: {e}")
+            return {}
     
     def setup_signal_handlers(self):
         """시스템 종료 신호 처리"""
@@ -178,7 +177,6 @@ class SimpleMedicineDispenser:
             # ✅ 5단계: 복용 완료 처리 (took_today = 1로 설정)
             print("[CONFIRM] 복용 완료 처리 중...")
             try:
-                from utils.server_request import confirm_user_intake
                 confirm_result = confirm_user_intake(uid)
                 
                 if confirm_result and confirm_result.get('status') in ['confirmed', 'already_confirmed']:
@@ -334,6 +332,9 @@ class SimpleMedicineDispenser:
     
     def shutdown(self):
         """시스템 종료"""
+        if not self.running:  # 이미 종료 중이면 중복 실행 방지
+            return
+            
         print("\n[SYSTEM] 시스템 종료 중...")
         self.running = False
         
